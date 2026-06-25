@@ -1,0 +1,88 @@
+{
+  "version": "0.1.0",
+  "categories": [
+    {
+      "id": "vm",
+      "name": "Virtual Machine",
+      "description": "VMware, VirtualBox, and QEMU registry artifacts. Most commodity malware bails immediately when it sees these.",
+      "artifacts": [
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\VMware, Inc." },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\VMware, Inc.\\VMware Tools" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Oracle\\VirtualBox Guest Additions" },
+        { "type": "registry_key", "path": "HKLM\\HARDWARE\\ACPI\\DSDT\\VBOX__" },
+        { "type": "registry_key", "path": "HKLM\\HARDWARE\\ACPI\\FADT\\VBOX__" },
+        { "type": "registry_key", "path": "HKLM\\HARDWARE\\ACPI\\RSDT\\VBOX__" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\VBoxGuest" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\VBoxMouse" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\VBoxService" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\VBoxSF" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\VBoxVideo" }
+      ]
+    },
+    {
+      "id": "antivirus",
+      "name": "Antivirus",
+      "description": "Registry keys that make it look like common AV products are installed.",
+      "artifacts": [
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Malwarebytes" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\ESET" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Avast Software" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\AVG" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Kaspersky Lab" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Bitdefender" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\McAfee" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Symantec" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Sophos" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\TrendMicro" }
+      ]
+    },
+    {
+      "id": "analysis_tools",
+      "name": "Analysis Tools",
+      "description": "Artifacts left by Wireshark, Sysinternals, and other tools analysts run during investigation.",
+      "artifacts": [
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Wireshark" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals\\Process Monitor" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals\\Process Explorer" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals\\Autoruns" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals\\Strings" },
+        { "type": "registry_key", "path": "HKCU\\SOFTWARE\\Sysinternals\\ProcDump" }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "name": "Sandbox",
+      "description": "Cuckoo and Sandboxie indicators used by automated malware analysis environments.",
+      "artifacts": [
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Cuckoo" },
+        { "type": "registry_key", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Sandboxie" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\SbieDrv" },
+        { "type": "registry_key", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\SandboxieRpcSs" }
+      ]
+    },
+    {
+      "id": "mutexes",
+      "name": "Analysis Mutexes",
+      "description": "Named mutexes created by analysis tools. Kept alive in memory while Chaff is running.",
+      "artifacts": [
+        { "type": "mutex", "path": "PROCMON_PORT_MUTEX" },
+        { "type": "mutex", "path": "Wireshark-is-running-{9508AFC4-9B86-498E-8F08-59E3F1EFAB7A}" },
+        { "type": "mutex", "path": "MicrosoftMalwareProtectionRemoteIoRequest" },
+        { "type": "mutex", "path": "ProcExpMutex" },
+        { "type": "mutex", "path": "cuckoo_agent_ctrl" },
+        { "type": "mutex", "path": "_SHuassist" }
+      ]
+    },
+    {
+      "id": "pipes",
+      "name": "VM Named Pipes",
+      "description": "Named pipes created by VMware and VirtualBox guest tools. Kept alive while Chaff is running.",
+      "artifacts": [
+        { "type": "named_pipe", "path": "\\\\.\\pipe\\vmware_vgauth" },
+        { "type": "named_pipe", "path": "\\\\.\\pipe\\VMWareClient" },
+        { "type": "named_pipe", "path": "\\\\.\\pipe\\VBoxTrayIPC" }
+      ]
+    }
+  ]
+}

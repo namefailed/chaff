@@ -8,8 +8,6 @@ use std::collections::HashMap;
 use std::io::Write;
 
 fn main() -> eframe::Result<()> {
-    // Ghost mode: we were copied to a fake process name and launched with --ghost.
-    // Just sleep until terminated — we exist only to appear in Task Manager.
     if std::env::args().any(|a| a == "--ghost") {
         loop { std::thread::sleep(std::time::Duration::from_secs(3600)); }
     }
@@ -38,9 +36,6 @@ struct CatState {
 impl CatState {
     fn process_count(&self) -> usize { self.ghosts.len() }
     fn handle_count(&self) -> usize { self.handles.len() }
-    fn total_removed(&self, reg_removed: usize) -> usize {
-        reg_removed + self.handles.len() + self.ghosts.len()
-    }
 }
 
 struct TrayHandle {
@@ -50,14 +45,6 @@ struct TrayHandle {
 }
 
 impl TrayHandle {
-    fn handle_event(&self, ev: &tray_icon::menu::MenuEvent, ctx: &egui::Context) {
-        if ev.id == self.open_id {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        } else if ev.id == self.quit_id {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-    }
-
     fn set_tooltip(&self, text: &str) {
         let _ = self._icon.set_tooltip(Some(text));
     }
@@ -70,6 +57,9 @@ struct App {
     process_count: usize,
     status: String,
     tray: Option<TrayHandle>,
+    // True only when Quit is chosen from tray — lets us distinguish from the
+    // window X button, which should hide to tray rather than exit.
+    quitting: bool,
 }
 
 impl App {
@@ -84,6 +74,7 @@ impl App {
             process_count: 5,
             status: String::new(),
             tray: setup_tray(),
+            quitting: false,
         }
     }
 
@@ -104,74 +95,68 @@ impl App {
         let procs = self.total_processes();
         let keys = self.total_keys();
         if procs > 0 || keys > 0 {
-            tray.set_tooltip(&format!("Chaff — {procs} processes, {keys} registry keys active"));
+            tray.set_tooltip(&format!("Chaff — {procs} processes, {keys} keys active"));
         } else {
             tray.set_tooltip("Chaff — inactive");
         }
     }
-}
 
-// ── Tray setup ────────────────────────────────────────────────────────────────
-
-fn setup_tray() -> Option<TrayHandle> {
-    use tray_icon::{TrayIconBuilder, Icon};
-    use tray_icon::menu::{Menu, MenuItem};
-
-    // Simple 32x32 dark-red icon — no image file dependency
-    let size = 32u32;
-    let rgba: Vec<u8> = (0..size * size).flat_map(|_| [160u8, 40, 40, 255]).collect();
-    let icon = Icon::from_rgba(rgba, size, size).ok()?;
-
-    let open_item = MenuItem::new("Open Chaff", true, None);
-    let quit_item = MenuItem::new("Quit", true, None);
-    let open_id = open_item.id().clone();
-    let quit_id = quit_item.id().clone();
-
-    let menu = Menu::new();
-    let _ = menu.append(&open_item);
-    let _ = menu.append(&quit_item);
-
-    let icon = TrayIconBuilder::new()
-        .with_tooltip("Chaff — inactive")
-        .with_icon(icon)
-        .with_menu(Box::new(menu))
-        .build()
-        .ok()?;
-
-    Some(TrayHandle { _icon: icon, open_id, quit_id })
-}
-
-// ── Logging ───────────────────────────────────────────────────────────────────
-
-fn log(msg: &str) {
-    let Ok(appdata) = std::env::var("APPDATA") else { return };
-    let path = std::path::Path::new(&appdata).join("chaff").join("chaff.log");
-    let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(&path) else { return };
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let _ = writeln!(f, "[{ts}] {msg}");
-}
-
-// ── UI ────────────────────────────────────────────────────────────────────────
-
-impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Keep polling active for tray events even when minimized
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-
-        // Tray menu events
-        if let Ok(ev) = tray_icon::menu::MenuEvent::receiver().try_recv() {
-            if let Some(tray) = &self.tray {
-                tray.handle_event(&ev, ctx);
+    fn remove_all(&mut self) {
+        let ids: Vec<_> = self.active.keys().cloned().collect();
+        for id in &ids {
+            if let Some(cat) = self.db.categories.iter().find(|c| c.id == *id) {
+                engine::remove_registry(cat);
             }
         }
-        // Tray icon click → focus window
+        // Clear drops all Handles (CloseHandle) and GhostProcesses (kill+wait)
+        self.active.clear();
+        // Safe to delete temp dir now that all ghost processes are dead
+        engine::cleanup_ghost_temp();
+    }
+}
+
+// ── Cleanup on exit ───────────────────────────────────────────────────────────
+
+impl eframe::App for App {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.remove_all();
+        log("Chaff exited");
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Poll tray events every frame — needed even when minimized
+        ctx.request_repaint_after(std::time::Duration::from_millis(200));
+
+        // ── Tray menu events ──────────────────────────────────────────────────
+        if let Ok(ev) = tray_icon::menu::MenuEvent::receiver().try_recv() {
+            if let Some(tray) = &self.tray {
+                if ev.id == tray.open_id {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                } else if ev.id == tray.quit_id {
+                    self.quitting = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+
+        // Tray icon left-click → restore window
         if tray_icon::TrayIconEvent::receiver().try_recv().is_ok() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
 
+        // ── Close button → hide to tray (unless Quit was chosen) ─────────────
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.quitting {
+                // Let eframe close normally; on_exit will clean up
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+        }
+
+        // ── Pre-compute for borrow checker ────────────────────────────────────
         let cats: Vec<(String, String, String, bool)> = self.db.categories.iter()
             .map(|c| (c.id.clone(), c.name.clone(), c.description.clone(), c.has_processes()))
             .collect();
@@ -183,7 +168,7 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(4.0);
 
-            // Header with live stats
+            // Header
             ui.horizontal(|ui| {
                 ui.heading("Chaff");
                 ui.add_space(12.0);
@@ -218,8 +203,7 @@ impl eframe::App for App {
                         ui.checkbox(&mut checked, name);
                         if is_active {
                             let badge = if *is_proc_cat {
-                                let n = self.active[id].process_count();
-                                format!("● {n} running")
+                                format!("● {} running", self.active[id].process_count())
                             } else {
                                 "● active".to_string()
                             };
@@ -262,10 +246,7 @@ impl eframe::App for App {
                         let ghost_names: Vec<String> = result.ghosts.iter().map(|g| g.name.clone()).collect();
 
                         if result.fail > 0 {
-                            let msg = format!(
-                                "{}: {} ok, {} failed (admin?)",
-                                cat.name, result.ok, result.fail
-                            );
+                            let msg = format!("{}: {} ok, {} failed (admin?)", cat.name, result.ok, result.fail);
                             log(&msg);
                             msgs.push(msg);
                         } else {
@@ -295,26 +276,20 @@ impl eframe::App for App {
                     .add_enabled(any_active, egui::Button::new("■  Remove"))
                     .clicked()
                 {
+                    // Collect messages before remove_all clears active
                     let ids: Vec<_> = self.active.keys().cloned().collect();
                     let mut msgs = Vec::new();
-
                     for id in &ids {
-                        if let Some(cat) = self.db.categories.iter().find(|c| &c.id == id) {
-                            let reg_removed = engine::remove_registry(cat);
-                            if let Some(state) = self.active.remove(id) {
-                                let total = state.total_removed(reg_removed);
-                                let msg = format!("{}: {total} removed", cat.name);
-                                log(&msg);
-                                msgs.push(msg);
-                                // handles and ghosts dropped here — CloseHandle + kill + wait
-                            }
+                        if let Some(cat) = self.db.categories.iter().find(|c| c.id == *id) {
+                            msgs.push(cat.name.clone());
                         }
                     }
 
-                    engine::cleanup_ghost_temp();
-                    self.status = msgs.join("  |  ");
-                    self.update_tray();
+                    self.remove_all();
                     log("All artifacts removed");
+
+                    self.status = format!("Removed: {}", msgs.join(", "));
+                    self.update_tray();
                 }
             });
 
@@ -335,4 +310,47 @@ impl eframe::App for App {
             });
         });
     }
+}
+
+// ── Tray setup ────────────────────────────────────────────────────────────────
+
+fn setup_tray() -> Option<TrayHandle> {
+    use tray_icon::{TrayIconBuilder, Icon};
+    use tray_icon::menu::{Menu, MenuItem};
+
+    let size = 32u32;
+    let rgba: Vec<u8> = (0..size * size).flat_map(|_| [160u8, 40, 40, 255]).collect();
+    let icon = Icon::from_rgba(rgba, size, size).ok()?;
+
+    let open_item = MenuItem::new("Open Chaff", true, None);
+    let quit_item = MenuItem::new("Quit", true, None);
+    let open_id = open_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    let menu = Menu::new();
+    let _ = menu.append(&open_item);
+    let _ = menu.append(&quit_item);
+
+    let icon = TrayIconBuilder::new()
+        .with_tooltip("Chaff — inactive")
+        .with_icon(icon)
+        .with_menu(Box::new(menu))
+        .build()
+        .ok()?;
+
+    Some(TrayHandle { _icon: icon, open_id, quit_id })
+}
+
+// ── Logging ───────────────────────────────────────────────────────────────────
+
+fn log(msg: &str) {
+    let Ok(appdata) = std::env::var("APPDATA") else { return };
+    let dir = std::path::Path::new(&appdata).join("chaff");
+    let _ = std::fs::create_dir_all(&dir);
+    let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(dir.join("chaff.log")) else { return };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let _ = writeln!(f, "[{ts}] {msg}");
 }

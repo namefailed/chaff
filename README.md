@@ -266,6 +266,15 @@ Chaff doesn't protect against targeted attacks or sophisticated malware that val
 
 ---
 
+## 🫡 Prior art
+
+Chaff wouldn't exist without these:
+
+- **[CyberScarecrow](https://www.cyberscarecrow.com/)** — the commercial product that popularized this approach for home users. Closed source, Windows only, free. Chaff is the open-source answer to it.
+- **[Malcrow](https://github.com/joaovarelas/Malcrow)** — an open-source malware deception tool that proved the concept works without commercial software. Unmaintained since 2022, but the ideas here are a direct evolution of that work.
+
+---
+
 ## 🚀 Quick start
 
 **Download** the latest `chaff.exe` from the [Releases](https://github.com/namefailed/chaff/releases) page. The release binary has the full artifact list baked in — no setup, no installer.

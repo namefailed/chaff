@@ -1,5 +1,5 @@
 <p align="center">
-  <em>Screenshot coming soon — Chaff is a single-window desktop app with a checkbox list and Apply/Remove buttons.</em>
+  <em>Screenshot coming soon — single window, checkbox list per category, Apply / Remove buttons, live stats in the header.</em>
 </p>
 
 <p align="center">
@@ -12,37 +12,70 @@
 
 **Make your machine look like a malware analyst's sandbox.**
 
-Click Apply. Chaff plants fake registry keys, creates named mutexes and pipes, and spawns ghost processes under the names of debuggers, AV products, and VM guest tools — the exact breadcrumbs ransomware and info-stealers check before executing. Most commodity malware sees these indicators and quietly exits.
+Click Apply. Go about your day.
 
-100% local. No cloud, no telemetry, no installer required. Everything Chaff creates is cleaned up when you hit Remove.
+Chaff plants the exact breadcrumbs ransomware and info-stealers check before deploying — fake registry keys, named mutexes, open pipes, and ghost processes running under debugger and AV names. Most commodity malware sees them and quietly exits. **Without ever being detected or blocked.**
+
+Everything is cleaned up the moment you hit Remove. No residue, no installer, no background service.
 
 ---
 
-## 🧠 How it works
+## 🧠 Philosophy
 
-Malware commonly checks whether it is running in an analysis environment before deploying its payload. The checks are cheap: is a named mutex present? Is `procmon.exe` in the process list? Does the `VMware` registry tree exist? If the answer is yes, the sample aborts — not because analysis stopped it, but because the malware stopped itself.
+| Principle | What It Means |
+|-----------|---------------|
+| **🎭 Deception over detection** | Chaff doesn't block or scan anything. It makes malware decide on its own that your machine isn't worth touching. Nothing to update, nothing to bypass. |
+| **🪶 Zero footprint** | No service, no driver, no installer. One `.exe`. Everything Chaff creates — registry keys, handles, ghost processes — vanishes when you click Remove or close the app. |
+| **🎲 Randomized by default** | Process categories sample a random subset each run. The same malware that fingerprinted your process list last week will see a different one today. |
 
-Chaff exploits this by planting those indicators on a normal machine:
+---
 
-| Artifact type | What Chaff creates | Cleaned up by |
+## 🎯 Why deception works
+
+Malware doesn't want to be analyzed. Before executing, most commodity samples do a fast environment check — is a debugger running? Is this a VM? Does Wireshark exist in the process list? If the answer is yes, the sample aborts. Not because it was caught, but because it chose to leave.
+
+Chaff exploits that logic:
+
+- **Home users** — most ransomware and stealers aren't targeted. They're spray-and-pray. Anything that looks like an analyst box gets skipped automatically.
+- **Researchers and red teamers** — test samples in a live environment without spinning up a full VM. Ghost processes and registry keys are instant; tear them down after.
+- **Environments without EDR** — deception artifacts cost nothing to maintain and require no definitions, no cloud, no subscription.
+- **Defense in depth** — even with AV installed, a sample that self-terminates on entry never gets a chance to exploit a zero-day or misconfiguration.
+
+Chaff doesn't protect against targeted attacks or sophisticated malware that validates its environment more carefully. It's a speed bump for the vast majority of commodity threats that use static checklists.
+
+---
+
+## ⚙️ How it works
+
+| Artifact type | What Chaff does | Cleaned up by |
 |---|---|---|
-| **Registry key** | Creates the key path (no values needed — the path itself is the signal) | Remove button |
-| **Mutex** | Calls `CreateMutexW` and holds the handle open | Remove button (handle closed on drop) |
+| **Registry key** | Creates the key path under `HKLM\` or `HKCU\` — the path itself is the signal, no values needed | Remove button |
+| **Mutex** | Calls `CreateMutexW` and holds the handle open for the lifetime of the app | Remove button (handle closed on drop) |
 | **Named pipe** | Calls `CreateNamedPipeW` and holds the server end open | Remove button (handle closed on drop) |
-| **Ghost process** | Copies itself to `%TEMP%\chaff\<name>.exe` and launches it with `--ghost`; the copy sleeps forever and appears in Task Manager under the fake name | Remove button (process killed + temp copy deleted) |
+| **Ghost process** | Copies itself to `%TEMP%\chaff\<name>.exe` and launches it with `--ghost`; the copy sleeps forever and shows up in Task Manager under the fake name | Remove button (process killed, temp copy deleted) |
 
-The artifact database lives in a [separate community repo](https://github.com/namefailed/chaff-artifacts) and is fetched on startup (24-hour cache at `%APPDATA%\chaff\artifacts.json`). If there's no network, Chaff falls back to the copy bundled at build time.
+> **`HKLM\` keys require admin rights.** Right-click Chaff → Run as administrator to plant VM and antivirus registry artifacts. `HKCU\` keys, mutexes, pipes, and ghost processes all work without elevation.
+
+---
+
+## ✨ Features
+
+- **✅ Category checkboxes** — enable only what you want. VM registry artifacts, AV keys, analysis tool keys, sandbox indicators, mutexes, pipes, and six process pools are all independent.
+- **🎲 Random process sampling** — each process category has a pool of 12–64 names and a sample size. Chaff picks a random subset every time you Apply, so the process list varies across runs.
+- **🔢 Process count slider** — override the per-category sample with a global slider (1–20 processes per category).
+- **📊 Live stats** — the header shows active process count, registry key count, and open handle count in real time.
+- **🖥️ System tray** — minimize to tray; Open / Quit from the context menu. The tray tooltip updates with active counts.
+- **📋 Log file** — every Apply and Remove action is written to `%APPDATA%\chaff\chaff.log` with a Unix timestamp.
+- **⚡ Single binary** — no installer, no runtime, no dependencies. Drop the `.exe` anywhere and run it.
 
 ---
 
 ## 🛡️ Artifact catalog
 
-### VM Registry Keys
-
-Keys that signal VirtualBox, VMware, Hyper-V, or QEMU is installed. Most commodity malware does an `HKLM\SOFTWARE` check before touching the payload.
-
 <details>
-<summary>VirtualBox (21 keys)</summary>
+<summary><strong>VM Registry Keys</strong> — VirtualBox (21), VMware (14), Hyper-V (11), QEMU (9)</summary>
+
+**VirtualBox**
 
 | Key |
 |---|
@@ -68,10 +101,7 @@ Keys that signal VirtualBox, VMware, Hyper-V, or QEMU is installed. Most commodi
 | `HKLM\SYSTEM\CurrentControlSet\Services\VBoxNetFlt` |
 | `HKLM\SYSTEM\CurrentControlSet\Services\VBoxUSB` |
 
-</details>
-
-<details>
-<summary>VMware (14 keys)</summary>
+**VMware**
 
 | Key |
 |---|
@@ -90,10 +120,7 @@ Keys that signal VirtualBox, VMware, Hyper-V, or QEMU is installed. Most commodi
 | `HKLM\SYSTEM\CurrentControlSet\Services\vmnetuserif` |
 | `HKLM\SYSTEM\CurrentControlSet\Services\vmicheartbeat` |
 
-</details>
-
-<details>
-<summary>Hyper-V (13 keys)</summary>
+**Hyper-V**
 
 | Key |
 |---|
@@ -109,10 +136,7 @@ Keys that signal VirtualBox, VMware, Hyper-V, or QEMU is installed. Most commodi
 | `HKLM\SYSTEM\CurrentControlSet\Services\storvsc` |
 | `HKLM\SYSTEM\CurrentControlSet\Services\vid` |
 
-</details>
-
-<details>
-<summary>QEMU (9 keys)</summary>
+**QEMU**
 
 | Key |
 |---|
@@ -128,9 +152,8 @@ Keys that signal VirtualBox, VMware, Hyper-V, or QEMU is installed. Most commodi
 
 </details>
 
-### Antivirus Registry Keys
-
-Keys that suggest common AV products are installed.
+<details>
+<summary><strong>Antivirus Registry Keys</strong> — 10 vendors</summary>
 
 | Key |
 |---|
@@ -145,9 +168,10 @@ Keys that suggest common AV products are installed.
 | `HKLM\SOFTWARE\Sophos` |
 | `HKLM\SOFTWARE\TrendMicro` |
 
-### Analysis Tool Registry Keys
+</details>
 
-Sysinternals and Wireshark leave these behind on analyst machines.
+<details>
+<summary><strong>Analysis Tool Registry Keys</strong> — Wireshark + Sysinternals (7)</summary>
 
 | Key |
 |---|
@@ -159,9 +183,10 @@ Sysinternals and Wireshark leave these behind on analyst machines.
 | `HKCU\SOFTWARE\Sysinternals\Strings` |
 | `HKCU\SOFTWARE\Sysinternals\ProcDump` |
 
-### Sandbox Registry Keys
+</details>
 
-Cuckoo and Sandboxie markers used by automated analysis pipelines.
+<details>
+<summary><strong>Sandbox Registry Keys</strong> — Cuckoo + Sandboxie (4)</summary>
 
 | Key |
 |---|
@@ -170,9 +195,10 @@ Cuckoo and Sandboxie markers used by automated analysis pipelines.
 | `HKLM\SYSTEM\ControlSet001\Services\SbieDrv` |
 | `HKLM\SYSTEM\ControlSet001\Services\SandboxieRpcSs` |
 
-### Named Mutexes
+</details>
 
-Held open by Chaff's process for as long as it runs.
+<details>
+<summary><strong>Named Mutexes</strong> — 6, held open while Chaff runs</summary>
 
 | Mutex |
 |---|
@@ -183,9 +209,10 @@ Held open by Chaff's process for as long as it runs.
 | `cuckoo_agent_ctrl` |
 | `_SHuassist` |
 
-### VM Named Pipes
+</details>
 
-Server ends held open by Chaff's process.
+<details>
+<summary><strong>VM Named Pipes</strong> — 3, server end held open while Chaff runs</summary>
 
 | Pipe |
 |---|
@@ -193,57 +220,49 @@ Server ends held open by Chaff's process.
 | `\\.\pipe\VMWareClient` |
 | `\\.\pipe\VBoxTrayIPC` |
 
-### Ghost Processes
-
-Chaff copies its own binary to `%TEMP%\chaff\<name>.exe` and launches it with `--ghost`. In ghost mode the binary sleeps and appears in Task Manager under the fake name. Each category has a `sample` count — Chaff picks that many at random from the pool so the set varies across runs.
+</details>
 
 <details>
-<summary>Debuggers — 22 names, 5 sampled per run</summary>
+<summary><strong>Debugger Processes</strong> — 22 names, 5 sampled per run</summary>
 
 `ollydbg.exe` · `x64dbg.exe` · `windbg.exe` · `immunitydebugger.exe` · `gdb.exe` · `radare2.exe` · `ida.exe` · `ida64.exe` · `softice.exe` · `d4l.exe` · `hiew.exe` · `dbgview.exe` · `debugview.exe` · `syser.exe` · `w32dasm.exe` · `fdbg.exe` · `ollydbg64.exe` · `debugger.exe` · `ollyice.exe` · `megadbg.exe` · `sicedt.exe` · `wdmkit.exe`
 
 </details>
 
 <details>
-<summary>Decompilers — 12 names, 3 sampled per run</summary>
+<summary><strong>Decompiler Processes</strong> — 12 names, 3 sampled per run</summary>
 
 `hexraysdecompiler.exe` · `ghidra.exe` · `retdec.exe` · `bochs.exe` · `titanengine.exe` · `javadecompiler.exe` · `dnspy.exe` · `ilspy.exe` · `dotpeek.exe` · `procyon.exe` · `snowman.exe` · `frida.exe`
 
 </details>
 
 <details>
-<summary>VM Processes — 20 names, 5 sampled per run</summary>
+<summary><strong>VM Host Processes</strong> — 20 names, 5 sampled per run</summary>
 
 `vmware.exe` · `vmware-vmx.exe` · `vmwareuser.exe` · `vmwareservice.exe` · `vboxservice.exe` · `vboxtray.exe` · `virtualbox.exe` · `vboxheadless.exe` · `parallels.exe` · `qemu.exe` · `vagrant.exe` · `vmusrvc.exe` · `vmtoolsd.exe` · `vmsrvc.exe` · `vmwaretray.exe` · `vboxcontrol.exe` · `vbox.exe` · `vboxsdl.exe` · `vboxwebsrv.exe` · `parallelsvm.exe`
 
 </details>
 
 <details>
-<summary>Sandbox Processes — 15 names, 3 sampled per run</summary>
+<summary><strong>Sandbox Processes</strong> — 15 names, 3 sampled per run</summary>
 
 `cuckoo.exe` · `sandboxie.exe` · `comodosandbox.exe` · `detours.exe` · `anubis.exe` · `gfi.exe` · `joeboxcontrol.exe` · `safescanner.exe` · `bsa.exe` · `threatanalyzer.exe` · `shadowboxer.exe` · `fireeyetool.exe` · `malwarehost.exe` · `firelamb.exe` · `vas.exe`
 
 </details>
 
 <details>
-<summary>System Monitoring Tools — 23 names, 5 sampled per run</summary>
+<summary><strong>System Monitoring Processes</strong> — 23 names, 5 sampled per run</summary>
 
 `procmon.exe` · `procexp.exe` · `regmon.exe` · `filemon.exe` · `wireshark.exe` · `fiddler.exe` · `tcpview.exe` · `autoruns.exe` · `apimonitor.exe` · `processhacker.exe` · `sysinspector.exe` · `regrunreanimator.exe` · `securitytaskmanager.exe` · `netmon.exe` · `ethereal.exe` · `spythemall.exe` · `processexplorer.exe` · `taskcatcher.exe` · `processrevealer.exe` · `procanalyzer.exe` · `resmon.exe` · `netviewer.exe` · `scylla.exe`
 
 </details>
 
 <details>
-<summary>Antivirus Processes — 64 names, 5 sampled per run</summary>
+<summary><strong>Antivirus Processes</strong> — 64 names, 5 sampled per run</summary>
 
 `avp.exe` · `avgnt.exe` · `ahnsd.exe` · `bdss.exe` · `bdagent.exe` · `egui.exe` · `ekrn.exe` · `avguard.exe` · `ccavsrv.exe` · `clamtray.exe` · `clamscan.exe` · `msmpeng.exe` · `mssense.exe` · `savservice.exe` · `saswinlo.exe` · `sbamtray.exe` · `spbbcsvc.exe` · `wrsa.exe` · `zlclient.exe` · `avastui.exe` · `ashdisp.exe` · `avastsvc.exe` · `avgui.exe` · `avgsvca.exe` · `fsdfwd.exe` · `vsserv.exe` · `mfemms.exe` · `mfevtps.exe` · `mcshield.exe` · `rtvscan.exe` · `navapsvc.exe` · `navw32.exe` · `ccapp.exe` · `drweb.exe` · `drwebd.exe` · `spideragent.exe` · `fortitray.exe` · `fortiscanner.exe` · `fortiedr.exe` · `pccntmon.exe` · `tmproxy.exe` · `tmntsrv.exe` · `mbam.exe` · `mbamservice.exe` · `mbamtray.exe` · `msascui.exe` · `msascuil.exe` · `msseces.exe` · `psafe.exe` · `df5serv.exe` · `dssagent.exe` · `antivirus.exe` · `dwengine.exe` · `dwscan.exe` · `cmdagent.exe` · `cis.exe` · `cfp.exe` · `cavwp.exe` · `avcenter.exe` · `avgsvc.exe` · `avshadow.exe` · `spiderml.exe` · `drwebupw.exe`
 
 </details>
-
----
-
-## ⚠️ Admin rights
-
-`HKLM\` registry keys require an elevated process. Run Chaff as administrator to plant the VM and antivirus registry artifacts. `HKCU\` keys (Sysinternals entries) work without elevation. Mutexes, pipes, and ghost processes never need admin rights.
 
 ---
 
@@ -255,15 +274,14 @@ Chaff copies its own binary to `%TEMP%\chaff\<name>.exe` and launches it with `-
 git clone https://github.com/namefailed/chaff.git
 cd chaff
 cargo build --release
-# Binary lands at target\release\chaff.exe
+# Binary at target\release\chaff.exe
 ```
 
 **Run**
 
-Right-click `chaff.exe` → **Run as administrator** (for `HKLM\` keys).  
-Click **Apply** to plant all selected artifacts. Click **Remove** to clean up everything.
+Right-click → **Run as administrator** to plant `HKLM\` registry keys. Standard user is fine for everything else.
 
-The system tray icon stays active when the window is minimized. Ghost processes and open handles are cleaned up automatically when Chaff exits.
+Click **▶ Apply** to plant artifacts. Click **■ Remove** to tear everything down. The system tray keeps Chaff alive when you close the window — use **Quit** from the tray menu to exit completely.
 
 ---
 
@@ -271,19 +289,9 @@ The system tray icon stays active when the window is minimized. Ghost processes 
 
 | Topic | Where |
 |---|---|
-| Artifact list (this page) | Scroll up — all 290+ artifacts are listed above |
-| Artifact format | [`chaff-artifacts` repo](https://github.com/namefailed/chaff-artifacts/blob/main/README.md) |
-| Adding / editing artifacts | See [Contributing to the artifact DB](#-contributing-to-the-artifact-db) below |
-| Log file | `%APPDATA%\chaff\chaff.log` — one line per apply/remove action |
-| Artifact cache | `%APPDATA%\chaff\artifacts.json` — refreshed every 24 hours from the artifacts repo |
-
----
-
-## 🔧 Contributing to the artifact DB
-
-The artifact database lives at **[namefailed/chaff-artifacts](https://github.com/namefailed/chaff-artifacts)**. It's a single `artifacts.json` file. PRs that add, correct, or remove indicators are welcome — see that repo's `README.md` for the schema and contribution guide.
-
-The app repo (`chaff`) ships a bundled copy as a fallback. After a `chaff-artifacts` release, open a PR here to update that bundled copy.
+| Full artifact list | Scroll up — everything is listed in the catalog above |
+| Log file | `%APPDATA%\chaff\chaff.log` |
+| Ghost process temp dir | `%TEMP%\chaff\` — cleared on Remove |
 
 ---
 
@@ -291,23 +299,19 @@ The app repo (`chaff`) ships a bundled copy as a fallback. After a `chaff-artifa
 
 | Layer | Choice |
 |---|---|
-| **UI** | [egui](https://github.com/emilk/egui) via [eframe](https://github.com/emilk/egui/tree/master/crates/eframe) — immediate-mode, single native binary, no webview |
+| **UI** | [egui](https://github.com/emilk/egui) via [eframe](https://github.com/emilk/egui/tree/master/crates/eframe) — immediate-mode GUI, single native binary, no webview |
 | **Registry** | [winreg](https://github.com/gentoo90/winreg-rs) |
 | **Mutexes / pipes** | [winapi](https://github.com/retep998/winapi-rs) — `CreateMutexW`, `CreateNamedPipeW` |
 | **System tray** | [tray-icon](https://github.com/tauri-apps/tray-icon) |
-| **Artifact fetch** | [ureq](https://github.com/algesten/ureq) with 3-second timeout, falls back to bundled copy |
 | **Random sampling** | [rand](https://github.com/rust-random/rand) — process categories pick a random subset each run |
 
-Single `chaff.exe` binary, no installer needed.
+Single `chaff.exe`. No installer, no runtime, no dependencies.
 
 ---
 
 ## 🤝 Contributing
 
-Bug reports, fixes, and new artifact entries are all welcome.
-
-- **New/corrected artifacts** → open a PR at [namefailed/chaff-artifacts](https://github.com/namefailed/chaff-artifacts)
-- **App bugs or features** → open an issue or PR here
+Bug reports and pull requests are welcome. Open an issue first if you're proposing something bigger.
 
 ---
 
@@ -315,4 +319,4 @@ Bug reports, fixes, and new artifact entries are all welcome.
 
 MIT OR Apache-2.0.
 
-A local-first project by [namefailed](https://github.com/namefailed) — no accounts, no telemetry, no tracking.
+Built by [@namefailed](https://github.com/namefailed). No accounts, no telemetry, no tracking.

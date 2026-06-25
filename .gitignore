@@ -1,1 +1,5 @@
 /target
+
+# Artifact database — kept in the private chaff-artifacts repo.
+# Copy artifacts.json here before building. Never commit it.
+/artifacts.json

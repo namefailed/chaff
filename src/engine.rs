@@ -2,7 +2,11 @@ use serde::Deserialize;
 use winreg::{RegKey, enums::*};
 use winapi::um::winnt::HANDLE;
 use winapi::shared::minwindef::FALSE;
+use rand::seq::SliceRandom;
 use std::io;
+use std::path::PathBuf;
+
+// ── Data model ────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, Clone)]
 pub struct Db {
@@ -15,7 +19,16 @@ pub struct Category {
     pub id: String,
     pub name: String,
     pub description: String,
+    /// If set, randomly sample this many process artifacts instead of spawning all.
+    #[serde(default)]
+    pub sample: Option<usize>,
     pub artifacts: Vec<Artifact>,
+}
+
+impl Category {
+    pub fn has_processes(&self) -> bool {
+        self.artifacts.iter().any(|a| a.kind == Kind::FakeProcess)
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -31,10 +44,12 @@ pub enum Kind {
     RegistryKey,
     Mutex,
     NamedPipe,
+    FakeProcess,
 }
 
-/// An owned Windows HANDLE that calls CloseHandle on drop.
-/// Mutexes and named pipes stay live as long as this is held.
+// ── RAII wrappers ─────────────────────────────────────────────────────────────
+
+/// Owned Windows HANDLE — calls CloseHandle on drop.
 pub struct Handle(HANDLE);
 unsafe impl Send for Handle {}
 unsafe impl Sync for Handle {}
@@ -44,42 +59,86 @@ impl Drop for Handle {
     }
 }
 
+/// Ghost process — a copy of our binary running under a fake process name.
+/// Killed and waited on drop.
+pub struct GhostProcess {
+    pub name: String,
+    child: std::process::Child,
+}
+
+impl Drop for GhostProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+// ── Apply result ──────────────────────────────────────────────────────────────
+
+pub struct ApplyResult {
+    pub ok: usize,
+    pub fail: usize,
+    pub reg_count: usize,
+    pub handles: Vec<Handle>,
+    pub ghosts: Vec<GhostProcess>,
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 pub fn load() -> Db {
     let json = crate::update::load_or_fetch()
         .unwrap_or_else(|| include_str!("../artifacts.json").to_string());
     serde_json::from_str(&json).expect("invalid artifacts.json")
 }
 
-/// Returns (applied, failed, live handles that must be kept alive by the caller).
-pub fn apply(cat: &Category) -> (usize, usize, Vec<Handle>) {
-    let (mut ok, mut fail) = (0, 0);
-    let mut handles = Vec::new();
+/// Apply all artifacts in a category.
+/// `process_limit` overrides the category's `sample` field for FakeProcess entries.
+pub fn apply(cat: &Category, process_limit: Option<usize>) -> ApplyResult {
+    let mut result = ApplyResult { ok: 0, fail: 0, reg_count: 0, handles: Vec::new(), ghosts: Vec::new() };
 
-    for a in &cat.artifacts {
+    let mut all: Vec<&Artifact> = cat.artifacts.iter().collect();
+
+    // For process categories, shuffle and limit. Other categories apply everything.
+    if cat.has_processes() {
+        let limit = process_limit.or(cat.sample).unwrap_or(all.len()).min(all.len());
+        all.shuffle(&mut rand::thread_rng());
+        all.truncate(limit);
+    }
+
+    for a in all {
         match a.kind {
             Kind::RegistryKey => match reg_create(&a.path) {
-                Ok(_) => ok += 1,
-                Err(_) => fail += 1,
+                Ok(_) => { result.ok += 1; result.reg_count += 1; }
+                Err(_) => result.fail += 1,
             },
             Kind::Mutex => match create_mutex(&a.path) {
-                Ok(h) => { ok += 1; handles.push(Handle(h)); }
-                Err(_) => fail += 1,
+                Ok(h) => { result.ok += 1; result.handles.push(Handle(h)); }
+                Err(_) => result.fail += 1,
             },
             Kind::NamedPipe => match create_pipe(&a.path) {
-                Ok(h) => { ok += 1; handles.push(Handle(h)); }
-                Err(_) => fail += 1,
+                Ok(h) => { result.ok += 1; result.handles.push(Handle(h)); }
+                Err(_) => result.fail += 1,
+            },
+            Kind::FakeProcess => match spawn_ghost(&a.path) {
+                Ok(g) => { result.ok += 1; result.ghosts.push(g); }
+                Err(_) => result.fail += 1,
             },
         }
     }
 
-    (ok, fail, handles)
+    result
 }
 
-/// Cleans up registry key artifacts. Mutex/pipe handles are closed by dropping the Vec<Handle>.
+/// Delete registry key artifacts for a category. Reverse order to clean children before parents.
 pub fn remove_registry(cat: &Category) -> usize {
     cat.artifacts.iter().rev()
         .filter(|a| a.kind == Kind::RegistryKey && reg_delete(&a.path).is_ok())
         .count()
+}
+
+/// Remove the temp ghost binary directory after all GhostProcesses are dropped.
+pub fn cleanup_ghost_temp() {
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("chaff"));
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -120,12 +179,12 @@ fn create_mutex(name: &str) -> io::Result<HANDLE> {
 
 fn create_pipe(name: &str) -> io::Result<HANDLE> {
     let wide = to_wide(name);
-    // ponytail: hardcoded PIPE_ACCESS_DUPLEX (0x3) and PIPE_TYPE_BYTE|PIPE_WAIT (0x0) constants
+    // ponytail: 0x3 = PIPE_ACCESS_DUPLEX, 0x0 = PIPE_TYPE_BYTE|PIPE_WAIT
     let h = unsafe {
         winapi::um::namedpipeapi::CreateNamedPipeW(
             wide.as_ptr(),
-            0x00000003, // PIPE_ACCESS_DUPLEX
-            0x00000000, // PIPE_TYPE_BYTE | PIPE_WAIT
+            0x00000003,
+            0x00000000,
             1, 0, 0, 0,
             std::ptr::null_mut(),
         )
@@ -135,4 +194,32 @@ fn create_pipe(name: &str) -> io::Result<HANDLE> {
     } else {
         Ok(h)
     }
+}
+
+// ── Ghost processes ───────────────────────────────────────────────────────────
+
+fn ghost_binary_path(name: &str) -> io::Result<PathBuf> {
+    let dir = std::env::temp_dir().join("chaff");
+    std::fs::create_dir_all(&dir)?;
+    let stem = name.trim_end_matches(".exe");
+    Ok(dir.join(format!("{stem}.exe")))
+}
+
+fn spawn_ghost(name: &str) -> io::Result<GhostProcess> {
+    use std::os::windows::process::CommandExt;
+
+    let path = ghost_binary_path(name)?;
+
+    // Only copy if the ghost binary doesn't already exist — can't overwrite a running .exe on Windows
+    if !path.exists() {
+        let our_exe = std::env::current_exe()?;
+        std::fs::copy(&our_exe, &path)?;
+    }
+
+    let child = std::process::Command::new(&path)
+        .arg("--ghost")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()?;
+
+    Ok(GhostProcess { name: name.to_string(), child })
 }

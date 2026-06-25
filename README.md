@@ -268,6 +268,12 @@ Chaff doesn't protect against targeted attacks or sophisticated malware that val
 
 ## 🚀 Quick start
 
+**Download** the latest `chaff.exe` from the [Releases](https://github.com/namefailed/chaff/releases) page. The release binary has the full artifact list baked in — no setup, no installer.
+
+Right-click → **Run as administrator** to plant `HKLM\` registry keys. Standard user is fine for everything else.
+
+Click **▶ Apply** to plant artifacts. Click **■ Remove** to tear everything down. The system tray keeps Chaff alive when you close the window — use **Quit** from the tray menu to exit completely.
+
 **Build from source**
 
 ```powershell
@@ -277,11 +283,7 @@ cargo build --release
 # Binary at target\release\chaff.exe
 ```
 
-**Run**
-
-Right-click → **Run as administrator** to plant `HKLM\` registry keys. Standard user is fine for everything else.
-
-Click **▶ Apply** to plant artifacts. Click **■ Remove** to tear everything down. The system tray keeps Chaff alive when you close the window — use **Quit** from the tray menu to exit completely.
+> The artifact database is kept in a private repository and baked into release binaries at build time. If you build from source without it, `build.rs` generates a minimal stub so the code compiles and runs — you just won't get the full indicator list. Download a release binary if you want the complete set.
 
 ---
 

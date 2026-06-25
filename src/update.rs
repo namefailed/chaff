@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-// ponytail: update ARTIFACTS_URL once chaff-artifacts is pushed to GitHub
 const ARTIFACTS_URL: &str =
     "https://raw.githubusercontent.com/namefailed/chaff-artifacts/main/artifacts.json";
 

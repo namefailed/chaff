@@ -56,6 +56,8 @@ Chaff doesn't protect against targeted attacks or sophisticated malware that val
 
 > **`HKLM\` keys require admin rights.** Right-click Chaff → Run as administrator to plant VM and antivirus registry artifacts. `HKCU\` keys, mutexes, pipes, and ghost processes all work without elevation.
 
+> **⚠️ Force-kill leaves registry keys behind.** Clicking Remove or using Quit from the tray menu cleans up everything — registry keys, handles, ghost processes, and `%TEMP%\chaff\`. If the process is hard-killed (Task Manager → End Process, power loss, crash), mutexes and pipes are released by the OS automatically, but registry keys persist until you run Chaff again and click Remove. This is unavoidable without a kernel driver. Use End Task (not End Process) if you need to kill Chaff from Task Manager.
+
 ---
 
 ## ✨ Features
